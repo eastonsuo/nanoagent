@@ -100,4 +100,4 @@ print(agent.run("统计 README.md 有多少单词").output)
 
 ## 许可证
 
-待定（计划采用宽松开源许可，如 MIT 或 Apache-2.0）。
+本项目采用 [MIT License](LICENSE)。
