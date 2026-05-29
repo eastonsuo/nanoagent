@@ -1,0 +1,17 @@
+# 本地内部文档（交接协议、评审记录）—— 不纳入版本控制
+_internal/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+.DS_Store
