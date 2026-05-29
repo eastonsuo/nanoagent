@@ -80,6 +80,7 @@ nanoagent 要填的就是这个空白。它的**项目价值**可以归结为两
 | 入口与装配 | 命令行 REPL | `nanoagent` 命令，交互式对话入口 | v0.1 | 顶层 API |
 | 扩展与配套 | Skill 系统 | 扫描目录、按 description 渐进式加载能力单元 | v0.2 | Tool 系统 |
 | 扩展与配套 | Trace 可观测 | OpenTelemetry span，覆盖 turn / LLM / 工具 | v0.2 | AgentLoop |
+| 扩展与配套 | MCP 工具适配器 | 把 MCP server 暴露的工具接入 Tool 系统（外部工具来源） | v0.2 | Tool 系统 |
 | 扩展与配套 | Subagent | `spawn_subagent` 工具，隔离上下文、只返回摘要 | v0.3 | Tool 系统 |
 | 扩展与配套 | Eval 框架 | 三维度评估，独立 repo | v0.4 | 全部 |
 
@@ -758,7 +759,7 @@ forbidden_modules = ["nanoagent.strategies", "nanoagent.tools",
 ```mermaid
 flowchart TD
     roadmap_core["Core 核心<br/>ReAct 循环 + 工具系统 + 命令行"]
-    roadmap_skills["Skills + Trace<br/>Skill 加载 + OpenTelemetry"]
+    roadmap_skills["Skills + Trace + MCP<br/>Skill 加载 + OTel + MCP 适配器"]
     roadmap_harness["Harness 工程化<br/>上下文 / 权限 / 熔断 / Subagent"]
     roadmap_eval["Eval 评估<br/>三维度评估框架"]
 
@@ -770,7 +771,7 @@ flowchart TD
 | 版本 | 时长 | 范围 | 验收标准 |
 |---|---|---|---|
 | v0.1 · Core | 1 周 | 单 agent + 工具系统 + in-memory memory + 命令行 demo | 核心代码 < 500 行 ；测试覆盖 > 70% ；命令行可对话、调工具、显示 token 用量 ；支持 OpenAI 及兼容接口 |
-| v0.2 · Skills + Trace | 1 周 | Skill 渐进式加载 + OpenTelemetry trace + 文件系统 memory | 每个 turn / LLM 调用 / 工具调用都有 span ；至少一个完整可用 skill |
+| v0.2 · Skills + Trace | 1 周 | Skill 渐进式加载 + OpenTelemetry trace + 文件系统 memory + **MCP 工具适配器** | 每个 turn / LLM 调用 / 工具调用都有 span ；至少一个完整可用 skill ；能接入一个 MCP server 的工具 |
 | v0.3 · Harness | 2 周 | 上下文管理多策略 + 权限系统 + 熔断器 + subagent | 上下文策略 ≥ 3 种 ；deny-first 权限管线可用 ；能跑长任务不崩 |
 | v0.4 · Eval | 1 周 | 三维度评估框架（独立 repo） | 30-50 个评估 case ；输出 case-by-case 报告 |
 
@@ -893,7 +894,7 @@ v0.1 直接使用官方 `openai` SDK，并在其上包一层自己的 `LLMClient
 
 ### 12.2 Tool 协议
 
-内部 schema 标准选 OpenAI Function Calling。不选 MCP 作为**内部**标准，因为 MCP 是跨进程协议。MCP 作为**外部**工具来源，会在 v0.3 通过适配器接入。
+内部 schema 标准选 OpenAI Function Calling。不选 MCP 作为**内部**标准，因为 MCP 是跨进程协议。MCP 作为**外部**工具来源，已决定**从 v0.3 前移到 v0.2** 通过适配器接入——2026 MCP 已成 agent 基础设施，且只加适配器、不碰 core（见 §9 v0.2 验收、§14.3）。
 
 ### 12.3 数据结构 ：dataclass 而非 pydantic
 
@@ -1007,11 +1008,11 @@ anthropic = ["anthropic>=0.30"]
 
 ### 14.2 范围与时间风险
 
-**风险 4 ：v0.3 的 harness 工程量被低估。** 缓解 ：v0.3 拆成 v0.3.1 与 v0.3.2。
+**风险 4 ：v0.3 的 harness 工程量被低估。** v0.3 要在同一版本里落上下文管理、权限系统、熔断器、subagent **四个相互独立的子系统**，每个都有自己的设计空间——尤其上下文工程是开放问题（截断 / 清理 / 摘要多策略并存），最易膨胀。把四者压在一个版本里，极易因某一项卡壳而拖垮整版节奏。缓解 ：① 拆成 **v0.3.1（上下文 + 权限）** 与 **v0.3.2（熔断 + subagent）**，各自独立可交付、独立验收，先交付前者再启动后者 ；② §4.3 已用一个假想压缩策略**纸面压测**过「core 一行不改」，所以 v0.3 的全部工程量都是 `strategies/` 内的**增量**、不回头动核心——风险被物理锁在策略层，不会外溢成跨层重构。
 
-**风险 5 ：「真正可用」的承诺需要收窄。** 缓解 ：把「真正可用」按版本分级。
+**风险 5 ：「真正可用」的承诺需要收窄。** 「真正可用」若作为一句笼统承诺必然 over-promise——不同人对「可用」的预期天差地别，模糊承诺只会透支信任。缓解 ：把它**按版本分级**，每级给一个可验收的具体含义 ：**v0.1** = 终端里能对话、能调工具、能看 token 用量的命令行 agent ；**v0.2** = 有 trace 可观测、至少一个可复用 skill ；**v0.3** = 能挂后台跑长任务不崩（上下文 / 权限 / 熔断到位）；**v0.4** = 有 eval 闭环为「可用」背书。这样「可用」在每个里程碑都是**可证伪**的具体断言，而非一句空头支票。
 
-**风险 6 ：命名空间偏拥挤。** 缓解 ：冲突过大时备选 `pynanoagent`。
+**风险 6 ：命名空间偏拥挤。** 缓解 ：PyPI 上 `nanoagent` 已确认可用（2026-05 实测返回 404），GitHub 仓库亦已建为 `eastonsuo/nanoagent`，故**定名 `nanoagent`**、不加 `py` 前缀（与 GitHub `sanbuphy/nanoAgent`、PyPI `nano-agent` 是不同的归一化名，无冲突）；`pynanoagent` 仅留作极端冲突时的休眠备选。
 
 ### 14.3 v0.1 实现前的开放问题：已定默认
 
@@ -1025,9 +1026,9 @@ anthropic = ["anthropic>=0.30"]
 - **命令行首次配置**：环境变量优先 → `~/.nanoagent/config.toml` → 都没有则一次性引导 wizard 粘贴 key（写 600 权限）。读用标准库 `tomllib`、写用手工拼字符串（不引第三方 toml 库，守依赖 ≤5）。
 - **REPL 流式输出**：v0.1 默认整段打印（等待时 spinner），不进核心循环做逐 token；但在 `LLMClient` 协议预留 `chat_stream` 形状，v0.2 让 REPL 旁路直接调它（不改 core）。
 
-> 仍待拍板（留到对应版本动手前）：① MCP 接入是否从 v0.3 前移到 v0.2（仅适配器、不碰 core；2026 MCP 已成 agent 基础设施）。
->
-> **已拍板**：② Hook 点已从 6 个补到 **8 个**——加入 `on_start`（run 起始一次）与 `before_compact`（压缩前预留，v0.1 声明但 `AgentLoop` 不 emit），见 §5.3 / §5.5。
+> **原两项开放问题均已拍板**：
+> ① **MCP 接入前移到 v0.2**——通过适配器把 MCP server 工具接入 Tool 系统，仅适配器、不碰 core（2026 MCP 已成 agent 基础设施）。见 §1.4 / §9 v0.2 / §12.2。
+> ② **Hook 点 6 → 8**——加入 `on_start`（run 起始一次）与 `before_compact`（压缩前预留，v0.1 声明但 `AgentLoop` 不 emit），见 §5.3 / §5.5。
 
 ### 14.4 已知债务
 
