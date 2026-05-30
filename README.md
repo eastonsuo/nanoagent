@@ -14,7 +14,7 @@ nanoagent 要填的就是这个空白，三个关键词缺一不可：
 - **融入最佳实践**：context engineering、权限校验、熔断、memory 分层、skill 系统等社区已验证的工程实践，分阶段、有解释地引入。
 - **真正可用**：不停在 toy 阶段——目标是 v0.4 能支撑长任务而不崩溃。
 
-## 设计赌注：Stable Core + Pluggable Strategy
+## 核心设计原则：Stable Core + Pluggable Strategy
 
 整个项目押在一个切分上：把框架切成**核心层**（过去五年没本质变化、未来数年大概率也不变的部分——LLM 调用、循环、工具调度、数据结构）与**策略层**（随最佳实践演化的部分——怎么管上下文、怎么校验权限、怎么熔断）。核心层一旦定稿就不再改动；引入新最佳实践 = 在策略层新增一个实现，核心层不动。
 
@@ -92,7 +92,7 @@ print(agent.run("统计 README.md 有多少单词").output)
 - **能力 / 策略契约**：`LLMClient` / `Tool` / `MemoryBackend`，以及 `ContextStrategy` / `PermissionStrategy` / `StopStrategy` 三个策略 Protocol。
 - **Hook 机制**：`Hook`（8 个生命周期点）+ `BaseHook` 空实现 + `ToolDecision`。
 - **其它**：`StopReason` 枚举、框架异常类型。
-- **依赖防线**：`core/` 不 import 任何外层目录——「稳定核心」赌注的物理保证（设计 §8.1）。
+- **依赖防线**：`core/` 不 import 任何外层目录——「稳定核心」这条原则的物理保证（设计 §8.1）。
 
 ## 文档
 
