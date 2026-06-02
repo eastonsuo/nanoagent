@@ -46,7 +46,7 @@
 
 nanoagent 要填的就是这个空白。它的**项目价值**可以归结为两点 ：
 
-- **参考经典实践** ：把分散在各家产品与文档里的 harness 工程实践，整理成一套有清晰契约、可对照阅读的实现。
+- **参考经典实践** ：把分散在各家产品与文档里的 harness 工程实践，整理成一套有清晰契约（Contract）、可对照阅读的实现。
 - **可扩展** ：核心层稳定，能力与策略通过统一的扩展点接入，使用者可以替换策略、增加工具、包装自己的前端。
 
 ### 1.3 目标读者
@@ -59,32 +59,96 @@ nanoagent 要填的就是这个空白。它的**项目价值**可以归结为两
 
 ### 1.4 全模块清单
 
-下表是全文唯一的模块权威清单。「大类」对应第 6 章的架构分层 ；「阶段」列标注模块首次落地的版本。
+下表是全文唯一的模块权威清单，分「固定不变」与「会随版本增长」两组（版本只在「会变」组标注，「契约」一词见 §1.5）。先看分层全局——下图按大类着色，回答「五个大类谁依赖谁」 ：
 
-| 大类 | 模块 | 职责 | 阶段 | 主要依赖 |
-|---|---|---|---|---|
-| 核心层 · 不变 | 核心数据结构 | `Message` / `ToolCall` / `ToolResult` / `Context` / `LLMResponse` / `AgentResult`，纯数据 dataclass | v0.1 | 无 |
-| 核心层 · 不变 | Protocol 契约 | `LLMClient` / `Tool` / `MemoryBackend` 等能力契约 | v0.1 | 核心数据结构 |
-| 核心层 · 不变 | Hook 机制 | 生命周期注入点的协议与默认空实现 | v0.1 | Protocol 契约 |
-| 核心层 · 不变 | 策略 Protocol 契约 | `ContextStrategy` / `PermissionStrategy` / `StopStrategy`，仅协议、不含实现 | v0.1 | Protocol 契约 |
-| 核心层 · 不变 | AgentLoop | 约 30 行的核心循环，编排「推理 → 工具 → 回填」 | v0.1 | 全部 core |
-| 能力实现层 | Tool 系统 | `@tool` 装饰器、注册表、从函数签名生成 schema | v0.1 | Protocol 契约 |
-| 能力实现层 | LLM 客户端 | OpenAI 兼容客户端 + 测试用回声客户端 | v0.1 | Protocol 契约 |
-| 能力实现层 | Memory 后端 | 默认 in-memory list 实现 | v0.1 | Protocol 契约 |
-| 能力实现层 | 文件系统 Memory | 以工作目录作为持久 memory | v0.2 | Memory 后端 |
-| 策略层 · 可插拔 | 默认策略 | 上下文 noop、权限 allow-all、停止 max-turns | v0.1 | Hook 机制 |
-| 策略层 · 可插拔 | 上下文管理策略 | 截断、工具结果清理等多种 context engineering 策略 | v0.3 | Hook 机制 |
-| 策略层 · 可插拔 | 权限系统 | deny-first 策略管线 + 多档信任级别 | v0.3 | Hook 机制 |
-| 策略层 · 可插拔 | 熔断器 | token 预算 / 调用次数 / 成本上限三类熔断 | v0.3 | Hook 机制 |
-| 入口与装配 | 顶层 API | `Agent` / `ChatSession` 高层封装 | v0.1 | 全部 |
-| 入口与装配 | 命令行 REPL | `nanoagent` 命令，交互式对话入口 | v0.1 | 顶层 API |
-| 扩展与配套 | Skill 系统 | 扫描目录、按 description 渐进式加载能力单元 | v0.2 | Tool 系统 |
-| 扩展与配套 | Trace 可观测 | OpenTelemetry span，覆盖 turn / LLM / 工具 | v0.2 | AgentLoop |
-| 扩展与配套 | MCP 工具适配器 | 把 MCP server 暴露的工具接入 Tool 系统（外部工具来源） | v0.2 | Tool 系统 |
-| 扩展与配套 | Subagent | `spawn_subagent` 工具，隔离上下文、只返回摘要 | v0.3 | Tool 系统 |
-| 扩展与配套 | Eval 框架 | 三维度评估，独立 repo | v0.4 | 全部 |
+```mermaid
+flowchart TD
+    core["核心层 · 数年不变<br/>数据结构 · 能力契约 · 策略契约 · Hook · AgentLoop"]
+    cap["能力实现层<br/>Tool · LLM · Memory …"]
+    strat["策略层 · 可插拔<br/>默认策略 · 上下文 · 权限 · 熔断 …"]
+    entry["入口与装配<br/>顶层 API · 命令行 REPL …"]
+    ext["扩展与配套<br/>Skill · Trace · MCP · Subagent · Eval …"]
 
-五个大类与第 6 章架构图一一对应 ：核心层是数年不动的稳定部分，能力实现层与策略层都是可替换的扩展点，入口与装配是面向使用者的封装，扩展与配套是 v0.2 之后叠加的工程能力。
+    cap -->|"实现能力契约"| core
+    strat -->|"实现策略契约 · 经 Hook 注入"| core
+    entry -->|"组装全部模块"| core
+    ext -->|"挂在 Tool 系统上"| cap
+
+    classDef l1 fill:#fff0aa,stroke:#b45309
+    classDef l2 fill:#bbf7d0,stroke:#16a34a
+    classDef l3 fill:#bfdbfe,stroke:#2563eb
+    classDef l4 fill:#e9d5ff,stroke:#7c3aed
+    classDef l5 fill:#fecaca,stroke:#dc2626
+    class core l1
+    class cap l2
+    class strat l3
+    class entry l4
+    class ext l5
+```
+
+**读图要点** ：暖黄的**核心层**是地基，所有箭头都指向它 ；**能力实现层**与**策略层**各实现 core 的一类契约——前者（Tool / LLM / Memory）被循环直接调用，后者经 Hook 注入 ；**入口与装配**把它们组装成可运行的 agent ；**扩展与配套**多为工具形态、挂在 Tool 系统之上。颜色只区分大类、与版本无关——某大类下各模块在哪个版本落地，见下方各表的「阶段」列。
+
+**第一组 · 固定不变（核心层）**——数年不改的稳定核心，一张闭合清单，全部 v0.1 落地 ：
+
+| 模块 | 职责 | 主要依赖 |
+|---|---|---|
+| 核心数据结构 | `Message` / `ToolCall` / `ToolResult` / `Context` / `LLMResponse` / `AgentResult`，纯数据 dataclass | 无 |
+| 能力契约 | `LLMClient` / `Tool` / `MemoryBackend`，LLM / 工具 / 记忆的统一接口 | 核心数据结构 |
+| 策略契约 | `ContextStrategy` / `PermissionStrategy` / `StopStrategy`，仅协议、不含实现 | 核心数据结构 |
+| Hook 机制 | 生命周期注入点的协议与默认空实现 | 核心数据结构 |
+| AgentLoop | 约 30 行的核心循环，编排「推理 → 工具 → 回填」 | 全部 core |
+
+**第二组 · 会随版本 / 需求增长（可扩展）**——按大类分多张表，每张以 `…` 行标注「凡满足对应契约者皆可接入」，并非封闭清单 ：
+
+*能力实现层（必需品 · 被循环直接调用）—— 实现能力契约 ；拿掉它循环就跑不起来 ：*
+
+| 模块 | 职责 | 阶段 | 主要依赖 |
+|---|---|---|---|
+| Tool 系统 | `@tool` 装饰器、注册表、从函数签名生成 schema | v0.1 | 能力契约 |
+| LLM 客户端 | OpenAI 兼容客户端 + 测试用回声客户端 | v0.1 | 能力契约 |
+| Memory 后端 | 默认 in-memory list 实现 | v0.1 | 能力契约 |
+| 文件系统 Memory | 以工作目录作为持久 memory | v0.2 | Memory 后端 |
+| `…` | 任何满足 `Tool` / `LLMClient` / `MemoryBackend` 契约的实现都可接入 | — | 能力契约 |
+
+*策略层（harness 主体 · 经 Hook 注入）—— 实现策略契约的工程保障（权限 / 上下文 / 熔断）；拿掉它循环仍能跑、退化成纯 ReAct ：*
+
+| 模块 | 职责 | 阶段 | 主要依赖 |
+|---|---|---|---|
+| 默认策略 | 上下文 noop、权限 allow-all、停止 max-turns | v0.1 | Hook 机制 |
+| 上下文管理策略 | 截断、工具结果清理等多种 context engineering 策略 | v0.3 | Hook 机制 |
+| 权限系统 | deny-first 策略管线 + 多档信任级别 | v0.3 | Hook 机制 |
+| 熔断器 | token 预算 / 调用次数 / 成本上限三类熔断 | v0.3 | Hook 机制 |
+| `…` | 任何满足策略 Protocol 的实现都可注入对应 Hook 点 | — | Hook 机制 |
+
+*入口与装配 —— 把上面各块组装成可运行的 agent ：*
+
+| 模块 | 职责 | 阶段 | 主要依赖 |
+|---|---|---|---|
+| 顶层 API | `Agent` / `ChatSession` 高层封装 | v0.1 | 全部 |
+| 命令行 REPL | `nanoagent` 命令，交互式对话入口 | v0.1 | 顶层 API |
+| `…` | 使用者可在顶层 API 上自建前端（bot / 编辑器插件 / GUI） | — | 顶层 API |
+
+*扩展与配套 —— v0.2 之后叠加的工程能力 ：*
+
+| 模块 | 职责 | 阶段 | 主要依赖 |
+|---|---|---|---|
+| Skill 系统 | 扫描目录、按 description 渐进式加载能力单元 | v0.2 | Tool 系统 |
+| Trace 可观测 | OpenTelemetry span，覆盖 turn / LLM / 工具 | v0.2 | AgentLoop |
+| MCP 工具适配器 | 把 MCP server 暴露的工具接入 Tool 系统（外部工具来源） | v0.2 | Tool 系统 |
+| Subagent | `spawn_subagent` 工具，隔离上下文、只返回摘要 | v0.3 | Tool 系统 |
+| Eval 框架 | 三维度评估，独立 repo | v0.4 | 全部 |
+| `…` | 后续工程能力按需叠加，均不改 core | — | — |
+
+两组的分界，正是项目核心设计原则（§3.1）的清单化表达 ：**第一组（核心层）数年不变、是上面唯一的闭合单表 ；其余四类都会随版本和需求增长，故拆成多表、以「…」标注开放。** 五个大类与第 6 章架构图一一对应。
+
+### 1.5 核心术语 ：契约（Contract）
+
+贯穿全文的「契约」一词，指 core 定义的抽象规范。**契约是抽象的协议 / 规范**，只规定「实现必须满足什么」，与用什么语言机制表达无关。在 core 里，契约有两种落地方式 ：
+
+- **`@dataclass`——表达「数据形状」**（有哪些字段、什么类型）：如 `Message` / `Context` / `ToolCall`，固定的字段集合本身就是契约。
+- **`typing.Protocol`——表达「行为接口」**（有哪些方法、什么签名）：如 `LLMClient` / `Tool` / `MemoryBackend` 及三个策略 Protocol，靠结构化鸭子类型 ——谁实现了这些方法谁就满足契约、无需继承。
+
+两者都只是契约的**实现手段**，契约本身是抽象的（完整签名见第 5 章）。此外还有一类两者都表达不了的**行为约定**（如「`view()` 不得改 `messages`」「`tool` 消息必须带 `tool_call_id` 配对」），靠测试与 CI 依赖防线（§8.1）来守。
 
 ---
 
@@ -268,7 +332,7 @@ class ContextHook(BaseHook):
 
 ## 5. 核心数据结构与接口契约
 
-本章是项目的契约层，决定核心层能否长期稳定。所有签名均为设计草案。
+本章是项目的契约层，决定核心层能否长期稳定。所有签名均为设计草案。契约的概念与两种落地方式（`dataclass` / `typing.Protocol`）见 §1.5，本章只给具体规格。
 
 ### 5.1 核心数据结构
 
