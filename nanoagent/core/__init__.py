@@ -19,6 +19,7 @@ from nanoagent.core.protocols import (
     Tool,
 )
 from nanoagent.core.errors import FatalError, NanoAgentError
+from nanoagent.core.loop import AgentLoop
 
 __all__ = [
     # 数据结构
@@ -28,6 +29,7 @@ __all__ = [
     "LLMResponse",
     "Context",
     "AgentResult",
+    "AgentLoop",
     "StopReason",
     # Hook
     "ToolDecision",
