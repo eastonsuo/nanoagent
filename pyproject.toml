@@ -16,7 +16,7 @@ dependencies = [
     "prompt-toolkit>=3",
     "rich>=13",
     "tiktoken>=0.7",
-    "duckduckgo-search>=6",
+    "ddgs>=6",
 ]
 
 [project.urls]

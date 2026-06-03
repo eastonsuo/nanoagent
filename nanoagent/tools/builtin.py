@@ -41,7 +41,10 @@ def run_shell(command: str) -> str:
 @tool
 def web_search(query: str, k: int = 5) -> list:
     """用 DuckDuckGo 检索，返回前 k 条「标题 — 链接」。"""
-    from duckduckgo_search import DDGS
+    try:
+        from ddgs import DDGS                  # 新包名（duckduckgo-search 已改名为 ddgs）
+    except ImportError:
+        from duckduckgo_search import DDGS     # 旧包名兜底（会有 deprecation 警告，建议 pip install ddgs）
 
     with DDGS() as ddgs:
         return [f"{r['title']} — {r['href']}" for r in ddgs.text(query, max_results=k)]
