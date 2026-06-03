@@ -957,33 +957,29 @@ $ nanoagent
 **单次任务带工具调用**：
 
 ```text
-▸ 看看当前目录里有哪些 .py 文件超过了 100 行
+$ nanoagent
+nanoagent v0.1 — 输入问题开始对话（Ctrl-D 退出）
 
-  [tool] list_files(directory=".", pattern="*.py")
-  [tool] read_file(path="loop.py")
-  [tool] read_file(path="api.py")
-
-  当前目录有 2 个 .py 文件超过 100 行 ：
-    - api.py     142 行
-    - loop.py    118 行
+> 把 ~/Downloads 里的截图按月份归到子目录
+  · list_files(directory="~/Downloads", pattern="*.png")
+  · run_shell(command="mkdir -p 2026-04 2026-05 && mv ...")
+  已整理 23 张截图到 2 个月份目录（2026-04、2026-05）。
 
   用量 ：3 轮 · 1,847 tokens
 ```
 
-**多轮对话 —— 全程记得上文**（v0.1 招牌体验）：命令行本身就是一个 `ChatSession`，整段对话复用同一个 `Context`，后一句无需重复前文：
+**多轮对话 —— 全程记得上文**（v0.1 招牌体验）：命令行本身就是一个 `ChatSession`，整段对话复用同一个 `Context`，后一句不必重复前文：
 
 ```text
-▸ 这个项目是干嘛的？
+> 统计 sales.csv 里各地区的销售总额
+  · read_file(path="sales.csv")
+  华东 128 万、华北 86 万、华南 54 万。
 
-  [tool] read_file(path="README.md")
-  nanoagent 是一个核心循环约 30 行的 ReAct 单 agent 框架。
-
-▸ 它的核心循环在哪个文件？        ← 「它」指上一轮的 nanoagent，模型据上下文即懂
-
-  loop.py（约 118 行）。
+> 那华东占总额多少？        （「华东」「总额」都承自上一轮，无需重说）
+  约 47.6%。
 ```
 
-当库用时同理 ：`s = Agent(...).session()` 后多次 `s.send(...)`，复用同一个 `Context`（见 §5.6 用法对照）；一次性、互不相关的任务才用 `Agent(...).run(...)`。
+第二问并没有再读一次 `sales.csv`——上一轮的数字已在同一个 `Context` 里，模型直接接着算，这就是「记得上文」。当库用时同理 ：`s = Agent(...).session()` 后多次 `s.send(...)` 复用同一个 `Context`（见 §5.6 用法对照）；一次性、互不相关的任务才用 `Agent(...).run(...)`。
 
 ### 11.3 v0.1 的内置工具
 
