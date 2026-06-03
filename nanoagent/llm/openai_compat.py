@@ -16,35 +16,43 @@ import json
 from nanoagent.core import LLMResponse, Message, ToolCall
 
 
+def _safe(text):
+    """去掉无法编码的孤立代理项（lone surrogate，如非 UTF-8 locale 下 input() 读坏的中文），
+    避免 openai 请求 json 编码时抛 UnicodeEncodeError。干净字符串原样返回。"""
+    if not isinstance(text, str):
+        return text
+    return text.encode("utf-8", "replace").decode("utf-8")
+
+
 def _to_openai(m: Message) -> dict:
-    """core Message → OpenAI message dict。"""
+    """core Message → OpenAI message dict（内容统一过 _safe 净化）。"""
     if m.role == "tool":
         # tool 结果消息：必须带 tool_call_id 与前一条 assistant 的调用配对
         tr = m.tool_result
         return {
             "role": "tool",
             "tool_call_id": tr.call_id if tr else "",
-            "content": tr.content if tr else "",
+            "content": _safe(tr.content) if tr else "",
         }
     if m.role == "assistant" and m.tool_calls:
         # 带工具调用的 assistant：arguments 序列化成 JSON 字符串
         return {
             "role": "assistant",
-            "content": m.content or None,
+            "content": _safe(m.content) or None,
             "tool_calls": [
                 {
                     "id": c.id,
                     "type": "function",
                     "function": {
                         "name": c.name,
-                        "arguments": json.dumps(c.arguments, ensure_ascii=False),
+                        "arguments": _safe(json.dumps(c.arguments, ensure_ascii=False)),
                     },
                 }
                 for c in m.tool_calls
             ],
         }
     # system / user / 纯文本 assistant
-    return {"role": m.role, "content": m.content}
+    return {"role": m.role, "content": _safe(m.content)}
 
 
 def _parse_response(resp) -> LLMResponse:

@@ -51,6 +51,12 @@ def test_to_openai_tool_message_pairs_call_id():
     assert d == {"role": "tool", "tool_call_id": "call_1", "content": "42"}
 
 
+def test_to_openai_sanitizes_lone_surrogate():
+    # 非 UTF-8 locale 下 input() 读坏的中文会带孤立代理项；_to_openai 应净化、使 content 可编码（不崩）
+    d = _to_openai(Message(role="user", content="查\udce8询"))
+    d["content"].encode("utf-8")   # 不抛 UnicodeEncodeError 即净化成功
+
+
 def test_parse_response_text():
     resp = NS(choices=[NS(message=NS(content="hi", tool_calls=None))],
               usage=NS(prompt_tokens=3, completion_tokens=2, total_tokens=5))
