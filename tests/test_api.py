@@ -2,8 +2,23 @@
 
 resolve_model 对「非字符串」原样返回，故传 EchoClient 即可全链路单测，不触发 openai。
 """
-from nanoagent.api import Agent, ChatSession, resolve_model
+from nanoagent.api import Agent, ChatSession, _detect_endpoint, resolve_model
 from nanoagent.llm import EchoClient
+
+
+def test_detect_endpoint_deepseek():
+    base, key_env = _detect_endpoint("deepseek-chat")
+    assert base == "https://api.deepseek.com"
+    assert key_env == "DEEPSEEK_API_KEY"
+
+
+def test_detect_endpoint_openai_default_unknown():
+    assert _detect_endpoint("gpt-4o-mini") == (None, None)
+
+
+def test_detect_endpoint_kimi():
+    base, _key = _detect_endpoint("moonshot-v1-8k")
+    assert base == "https://api.moonshot.cn/v1"
 
 
 def test_resolve_model_passthrough():

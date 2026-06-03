@@ -19,17 +19,41 @@ DEFAULT_SYSTEM_PROMPT = (
 )
 
 
+# 按模型名前缀自动选 OpenAI 兼容端点：(前缀, base_url, 专属 api_key 环境变量)。
+# 命中则自动配 base_url、并优先读该供应商的 key（没有则回落到 OpenAI SDK 默认的 OPENAI_API_KEY）。
+_PROVIDERS = [
+    ("deepseek", "https://api.deepseek.com", "DEEPSEEK_API_KEY"),
+    ("moonshot", "https://api.moonshot.cn/v1", "MOONSHOT_API_KEY"),
+    ("kimi", "https://api.moonshot.cn/v1", "MOONSHOT_API_KEY"),
+]
+
+
+def _detect_endpoint(model: str):
+    """按模型名前缀推断 (base_url, api_key 环境变量名)；未命中返回 (None, None)＝OpenAI 默认。"""
+    for prefix, base_url, key_env in _PROVIDERS:
+        if model.startswith(prefix):
+            return base_url, key_env
+    return None, None
+
+
 def resolve_model(model):
     """字符串模型名 → LLMClient；已是 LLMClient 则原样返回。
 
-    OPENAI_BASE_URL 环境变量可切到任意 OpenAI 兼容端点（如 DeepSeek：
-    OPENAI_BASE_URL=https://api.deepseek.com、OPENAI_API_KEY=<deepseek key>、模型名 deepseek-chat）。
+    自动选端点：模型名以已知前缀开头（如 ``deepseek-chat``）时，自动配好对应 base_url，
+    只需设供应商 key（DeepSeek 用 DEEPSEEK_API_KEY，没有则回落 OPENAI_API_KEY）即可。
+    显式 ``OPENAI_BASE_URL`` 环境变量优先级最高，可覆盖自动判断、接任意自建/未知端点。
     """
     if not isinstance(model, str):
         return model
     from nanoagent.llm import OpenAICompatClient   # 懒加载：仅用真实客户端时才需 openai
 
-    return OpenAICompatClient(model, base_url=os.environ.get("OPENAI_BASE_URL"))
+    base_url = os.environ.get("OPENAI_BASE_URL")          # 显式覆盖优先
+    api_key = None
+    if base_url is None:
+        base_url, key_env = _detect_endpoint(model)        # 按模型名自动选端点
+        if key_env:
+            api_key = os.environ.get(key_env)              # 供应商专属 key；None 时 SDK 回落 OPENAI_API_KEY
+    return OpenAICompatClient(model, base_url=base_url, api_key=api_key)
 
 
 class Agent:
