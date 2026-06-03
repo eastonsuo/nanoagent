@@ -16,3 +16,8 @@ venv/
 .idea/
 .vscode/
 .DS_Store
+
+# 本地启动脚本 / 环境变量（可能含 API key）—— 绝不提交
+start.sh
+.env
+*.local.sh
