@@ -669,7 +669,7 @@ class AgentLoop:
 - `_gate`：聚合所有 hook 的 `before_tool` 返回，**deny-first**——无 hook 时默认放行；任一返回 `allowed=False` 即拒绝，`reason` 取第一个拒绝者的。
 - `_invoke`：真正执行工具。工具名不在注册表时返回 `ToolResult(is_error=True, content="unknown tool: ...")` 而非抛异常（模型可能幻觉工具名）；工具内业务异常转成 `ToolResult(is_error=True)` 喂回模型（异常处理边界见 §14.3 开放问题）。
 - `_denial_message`：产出 `role="tool"` 且 `call_id` 对应被拒 `ToolCall` 的消息，保证 OpenAI 接口 tool_call/tool 配对完整（否则下一轮请求 400）。
-- 用量累计：循环每轮 `ctx.add_usage(response.usage)` 累加进 `ctx.usage`，返回时连同轮数填入 `AgentResult.turns / .usage`（§11.2「3 轮 · 1,847 tokens」即来源于此；v0.3 熔断 StopStrategy 也读 `ctx.usage` 判断是否超预算）。
+- 用量累计：循环每轮 `ctx.add_usage(response.usage)` 累加进 `ctx.usage`，返回时连同轮数填入 `AgentResult.turns / .usage`（§11.1「3 轮 · 1,847 tokens」即来源于此；v0.3 熔断 StopStrategy 也读 `ctx.usage` 判断是否超预算）。
 
 其中 `_emit` 与 `_gate` 的实现就这么几行（`_invoke` / `_denial_message` 按上面契约实现、从略），也正是它俩把 hook 调度收走，主循环才得以只剩主干 ：
 
@@ -944,9 +944,13 @@ v0.1 的最小可用成品是一个命令行 agent ：装好后在终端输入 `
 
 ## 11. 入门示例 ：命令行中的 agent
 
-本章示例都是 **v0.1**（命令行 + `@tool` 工具 + in-memory），也是当前唯一能真正跑通的版本。v0.2+ 的 MCP / Skill / subagent **用法示例**待各版本落地后再补；它们的**设计意图**见 §9 路线图、§1.4 全模块清单、§12.2。想知道**怎么往框架里加东西**（自定义工具 / 策略 / 能力实现），见本章末 §11.5。
+本章示例都是 **v0.1**（命令行 + `@tool` 工具 + in-memory），也是当前唯一能真正跑通的版本。v0.2+ 的 MCP / Skill / subagent **用法示例**待各版本落地后再补；它们的**设计意图**见 §9 路线图、§1.4 全模块清单、§12.2。想知道**怎么往框架里加东西**（自定义工具 / 策略 / 能力实现），见 §11.2「如何扩展框架」。
 
-### 11.1 安装与配置
+### 11.1 v0.1 版本
+
+以下是 v0.1（命令行 + `@tool` 工具 + in-memory）的用法。
+
+#### 安装与配置
 
 ```text
 $ pip install nanoagent
@@ -954,7 +958,7 @@ $ export OPENAI_API_KEY=sk-...
 $ nanoagent
 ```
 
-### 11.2 命令行对话 ：单次任务与多轮记忆
+#### 命令行对话 ：单次任务与多轮记忆
 
 **单次任务带工具调用**：
 
@@ -983,7 +987,7 @@ nanoagent v0.1 — 输入问题开始对话（Ctrl-D 退出）
 
 第二问并没有再读一次 `sales.csv`——上一轮的数字已在同一个 `Context` 里，模型直接接着算，这就是「记得上文」。当库用时同理 ：`s = Agent(...).session()` 后多次 `s.send(...)` 复用同一个 `Context`（见 §5.6 用法对照）；一次性、互不相关的任务才用 `Agent(...).run(...)`。
 
-### 11.3 v0.1 的内置工具
+#### 内置工具
 
 v0.1 自带 ：读文件、写文件、列目录、执行 shell 命令、网页检索。使用者也可以用 `@tool` 装饰器注册自己的工具 ：
 
@@ -999,15 +1003,15 @@ agent = Agent(model="gpt-4o-mini", tools=[word_count])
 print(agent.run("统计 README.md 有多少单词").output)
 ```
 
-### 11.4 关于 RAG
+#### 关于 RAG
 
 RAG 在 v0.1 的形态是**一个普通工具**，而非框架内置机制 ：使用者把检索逻辑包装成一个 `@tool` 函数，由模型自主决定何时调用。
 
-### 11.5 如何扩展框架（机制速览）
+### 11.2 如何扩展框架（机制速览）
 
 框架的扩展点就三类，**都不改 `core/`**（这正是「稳定核心 + 可插拔策略」的兑现）：
 
-- **加一个工具** → 写个函数挂 `@tool`、丢进 `tools=[...]`（上面 §11.3 即是）。MCP / Skill 等**外部工具来源**也走这条 ：v0.2 的 MCP 适配器把 MCP server 暴露的工具转成 `Tool` 接入注册表，对核心循环而言与本地工具无差别。
+- **加一个工具** → 写个函数挂 `@tool`、丢进 `tools=[...]`（上面「内置工具」一节即是）。MCP / Skill 等**外部工具来源**也走这条 ：v0.2 的 MCP 适配器把 MCP server 暴露的工具转成 `Tool` 接入注册表，对核心循环而言与本地工具无差别。
 - **加一个 harness 策略**（上下文裁剪 / 权限 / 熔断…）→ 实现对应的策略 Protocol（§5.4），再用一个 `Hook` 把它「包」起来、装配时注入（`Agent(..., hooks=[...])`）。**§4.3 用一个假想的 v0.3 压缩策略完整走了一遍这条路、且证明 core 一行不改**——那段就是最好的扩展范例。
 - **换一个能力实现**（不同 LLM 供应商 / 持久化 Memory…）→ 提供一个满足 `LLMClient` / `MemoryBackend` 的类（结构对上即可、无需继承，§1.5.1），装配时传入。
 
@@ -1123,7 +1127,7 @@ anthropic = ["anthropic>=0.30"]
 | 模式级（中） | plan-then-execute：先出计划、可选人工确认、再放开执行 | 一个 `StopStrategy` / `Hook` 实现 | Claude Code plan mode |
 | 编排级（重） | 显式 DAG + 并行执行器 | 独立 Tool / Skill 组件，绝不进核心 | agent-core DynamicGraph |
 
-这与 §2.7 的 subagent、§11.4 的 RAG 是同一条原则——**能力优先做成工具，而非框架机制**：一个能力只要能由模型自主决定何时使用，就先做成 `@tool`，只有当它必须改变核心控制流时才升格为策略（经 Hook 注入）。
+这与 §2.7 的 subagent、§11.1 的 RAG 是同一条原则——**能力优先做成工具，而非框架机制**：一个能力只要能由模型自主决定何时使用，就先做成 `@tool`，只有当它必须改变核心控制流时才升格为策略（经 Hook 注入）。
 
 **唯一真正放弃的是「框架级结构化并行 DAG」**（跨轮、带显式依赖边的并行）。但 ReAct 的单轮多 tool_calls 并发（模型一次吐多个调用、框架并发执行，见 §7「还能怎么优化」）已覆盖实践中绝大多数并行诉求；而真正的结构化并行 DAG，恰是 nanoagent 刻意挡在核心外的复杂度。
 
