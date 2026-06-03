@@ -490,7 +490,7 @@ flowchart TD
 
 **读图要点** ：实线是 v0.1 的全量直投，虚线是 v0.3 上下文策略经 `set_view()` 写入的裁剪 / 压缩投影；无论走哪条，`messages` 这条事件日志都不被触碰。核心循环只认 `view()`，所以上下文工程是**纯投影**、不破坏历史。
 
-核心循环只改一行：`llm.chat(ctx.view(), ...)`。上下文工程因此是**纯投影**，不破坏历史，core 数据结构与 30 行循环都不动。`Message` 上的 `pinned/ephemeral/token_estimate`、`ToolResult` 上的 `raw_bytes/elided`、`Context` 上的 `usage/summary` 全是**给 v0.3 策略读写的抓手，v0.1 只填充、不消费**——这样到 v0.3 接真实裁剪/压缩时，新增代码只落在 `strategies/`，core 一行不改。§4.3 用一个假想策略举例验证了这套抽象。
+核心循环只改一行：`llm.chat(ctx.view(), ...)`。上下文工程因此是**纯投影**，不破坏历史，core 数据结构与循环都不动。`Message` 上的 `pinned/ephemeral/token_estimate`、`ToolResult` 上的 `raw_bytes/elided`、`Context` 上的 `usage/summary` 全是**给 v0.3 策略读写的抓手，v0.1 只填充、不消费**——这样到 v0.3 接真实裁剪/压缩时，新增代码只落在 `strategies/`，core 一行不改。§4.3 用一个假想策略举例验证了这套抽象。
 
 被否决的更简方案：(A) 让策略直接删 `messages`——破坏不可逆历史；(B) 让 `before_model` 返回新列表——要破坏「8 个 Hook 点只有 `before_tool` 有返回值」的硬约束；(C) 在 api 层复制裁剪——把 harness 触发点挪出 `strategies`。`view()` 是唯一「不碰任何硬约束、又能承载 v0.3」的解，约 8 行纯 dataclass。
 
@@ -572,6 +572,8 @@ class BaseHook:
 
 八个点中只有 `before_tool` 有返回值（`ToolDecision`），因为只有它需要影响核心循环的控制流。其余七个点是纯观察 / 副作用点。`on_start` 在整个 run 起始 emit 一次、`before_turn` 每轮 emit ；`before_compact` 为 v0.3 上下文压缩预留——v0.1 的 `AgentLoop` 不 emit 它（无压缩），与 §5.1.1 占位字段同属「v0.1 声明、暂不驱动」。使用者既可实现整个 `Protocol`，也可继承 `BaseHook` 只覆盖关心的点。
 
+那七个无返回值的点**怎么影响本次 run**？只能改传进来的可变对象（主要是 `ctx`）——「副作用」即指此。正道有四条 ：① `ctx.set_view(...)`——`before_model` 改本轮真正发给模型的视图（§4.3 的 `ContextHook` 即此）；② `ctx.metadata`——当便签本，跨 hook / 跨轮存取计数器、标志；③ 写 `Message.pinned/token_estimate`、`Context.usage/summary` 等占位「抓手」字段，供后续策略读（§5.1.1）；④ 在 `after_model` / `after_tool` 里调整**尚未入日志**的 `response` / `result`（`AgentLoop` 在 emit 之后才 `ctx.add(...)`，见 §5.5）。**唯一红线**：绝不删改 `ctx.messages` 这条 append-only 事件日志（§5.1.1）——要让模型少看，用 `set_view` 写投影，不是删历史。
+
 ### 5.4 Harness 策略契约
 
 ```python
@@ -614,7 +616,7 @@ class CompositeStop:
 # 用法：AgentLoop(stop=CompositeStop(MaxTurnsStop(20), BudgetStop(8000)))  —— 单参数也能装多个
 ```
 
-`stop` 设计成**单数**而非 `list[StopStrategy]`，正是为此 ：「多条件取先命中」本身是一种策略（`CompositeStop`，归 `strategies/`），核心循环因此只需 `self.stop.should_stop(...)` **一次调用**、不必懂组合——§5.5 那约 30 行才保得住。v0.1 只用单个 `MaxTurnsStop`；到 v0.3 由 api 装配层把熔断 / 权限类停止策略组合进来，循环与签名不改。
+`stop` 设计成**单数**而非 `list[StopStrategy]`，正是为此 ：「多条件取先命中」本身是一种策略（`CompositeStop`，归 `strategies/`），核心循环因此只需 `self.stop.should_stop(...)` **一次调用**、不必懂组合。v0.1 只用单个 `MaxTurnsStop`；到 v0.3 由 api 装配层把熔断 / 权限类停止策略组合进来，循环与签名不改。
 
 注意：`StopStrategy` 是 `AgentLoop` 的**构造参数**（不计入 8 个 Hook）——停止判定是控制流主干，不是可选注入。`StopReason.DONE` 在模型不再调工具时产生；`MAX_TURNS / BUDGET / DENIED` 统一经每轮轮首的 `should_stop` 产生（v0.1 只有 `MaxTurnsStop` 产 `MAX_TURNS`；v0.3 的熔断 / 权限类 StopStrategy 在超预算 / 硬越权时产 `BUDGET / DENIED`）。`before_tool` 返回的 `ToolDecision(allowed=False)` 是**软拒绝**：只对该次调用喂回 denial message 让模型换路，不终止整轮。
 
@@ -661,7 +663,7 @@ class AgentLoop:
             turn += 1
 ```
 
-辅助函数契约（不铺进 30 行主体，但行为须定）：
+辅助函数契约（不铺进主体，但行为须定）：
 
 - `_emit`：遍历所有 hook 调用对应方法。v0.1 **不吞** hook 抛出的异常（直接上抛），便于初学者快速暴露 hook bug；默认无 hook 时它是空操作。
 - `_gate`：聚合所有 hook 的 `before_tool` 返回，**deny-first**——无 hook 时默认放行；任一返回 `allowed=False` 即拒绝，`reason` 取第一个拒绝者的。
@@ -669,9 +671,26 @@ class AgentLoop:
 - `_denial_message`：产出 `role="tool"` 且 `call_id` 对应被拒 `ToolCall` 的消息，保证 OpenAI 接口 tool_call/tool 配对完整（否则下一轮请求 400）。
 - 用量累计：循环每轮 `ctx.add_usage(response.usage)` 累加进 `ctx.usage`，返回时连同轮数填入 `AgentResult.turns / .usage`（§11.2「3 轮 · 1,847 tokens」即来源于此；v0.3 熔断 StopStrategy 也读 `ctx.usage` 判断是否超预算）。
 
+其中 `_emit` 与 `_gate` 的实现就这么几行（`_invoke` / `_denial_message` 按上面契约实现、从略），也正是它俩把 hook 调度收走，主循环才得以只剩主干 ：
+
+```python
+def _emit(self, point: str, *args):          # 把「循环到了某点」翻译成「调每个 hook 的同名方法」
+    for h in self.hooks:
+        getattr(h, point)(*args)             # point="before_model" → h.before_model(ctx)；v0.1 不 try/except，异常直接上抛
+
+def _gate(self, ctx, call) -> ToolDecision:  # before_tool 是唯一有返回值的点，单独处理
+    for h in self.hooks:
+        d = h.before_tool(ctx, call)
+        if not d.allowed:
+            return d                          # deny-first：第一个拒绝者说了算
+    return ToolDecision(allowed=True)         # 无 hook / 全放行 → 默认放行
+```
+
 ### 5.6 顶层装配契约：Agent 与 ChatSession
 
 §5.1–§5.5 是 core 契约。`Agent` / `ChatSession` 是**装配层**（在 `api.py`，不在 `core/`，可 import 全部模块）——§11 的示例就靠它。字符串模型名的解析集中在这里，`core` 永远只见到解析后的 `LLMClient`。
+
+**两个入口、一个引擎（不是包含关系）**：`Agent` 与 `ChatSession` 是架在同一个无状态 `AgentLoop`（编排引擎）上的**两个平级入口**，区别只在各自管的 `Context`——`Agent` 每次 `run()` **新建** ctx（任务间无记忆、相互隔离），`ChatSession` **持有一个长命** ctx（连续对话、带记忆）。两者都**在一次调用内跑多轮**（ReAct loop 跑很多轮），差别只在**跨调用**记不记得上文。`Agent.session()` 只是个**便捷工厂**（复用已配好的 loop 开一个会话），不是「Agent 含有 ChatSession」；也可直接 `ChatSession(loop, system)`。共享 loop、状态各管，正是「**状态归 `Context`、编排归 `Loop`**」（§14.3-Q3）的落地。
 
 ```python
 # nanoagent/api.py —— 装配层
@@ -684,7 +703,8 @@ def resolve_model(model: str | LLMClient) -> LLMClient:
     return OpenAICompatClient(model=model)
 
 class Agent:
-    """一次性任务的高层入口。无状态：每次 run 新建 Context。"""
+    """一次性任务的高层入口：每次 run 新建 Context（任务间无记忆、相互隔离）。
+    「无状态」指跨 run——单次 run 内仍是多轮 ReAct；本类只持有配置（loop + system_prompt），不持有对话状态。"""
     def __init__(self, model: str | LLMClient, tools: list[Tool] | None = None, *,
                  system_prompt: str | None = None, hooks: list[Hook] | None = None,
                  stop: StopStrategy | None = None, max_turns: int = 20):
@@ -698,12 +718,12 @@ class Agent:
         ctx.add(Message(role="user", content=prompt))
         return self._loop.run(ctx)
 
-    def session(self) -> "ChatSession":
+    def session(self) -> "ChatSession":          # 便捷工厂：复用同一个 loop 开个有状态会话（非「包含」ChatSession）
         return ChatSession(self._loop, self._system)
 
 class ChatSession:
-    """多轮对话：复用同一个无状态 AgentLoop + 持续累积的同一个 Context
-    （开放问题 §14.3-Q3 的答案：复用 loop、状态在 Context.messages）。"""
+    """多轮对话：与 Agent 平级的另一个入口，复用同一个无状态 AgentLoop + 持续累积的同一个 Context
+    （开放问题 §14.3-Q3 的答案：编排归 loop、状态在 Context.messages）。"""
     def __init__(self, loop: AgentLoop, system_prompt: str | None = None):
         self._loop = loop
         self.ctx = Context()
@@ -717,45 +737,51 @@ class ChatSession:
 
 `Agent.run` 把 `str` 包成 user `Message`、`system_prompt` 包成 pinned 的 system `Message`、构造 `Context` 后调 `AgentLoop.run`——这就是 §11 里 `Agent("gpt-4o-mini", ...).run("...").output` 能跑通的全部装配。
 
+**两种用法一眼对照**（同一份配置，`Agent.run` 隔离一次性、`ChatSession` 连续记忆）：
+
+```python
+agent = Agent("gpt-4o-mini", tools=[...])     # 配一次：模型 / 工具 / hooks
+
+# ① 一次性任务 / 子 agent —— 每次 run 都是干净的新 Context，彼此隔离
+agent.run("把 a.txt 归档")
+agent.run("把 b.txt 归档")                     # 看不到上一行
+
+# ② 连续对话 —— 复用同一个 Context，后一句记得前一句
+chat = agent.session()
+chat.send("我叫小明")
+print(chat.send("我叫什么？").output)          # → 小明（同一个 ctx 累积）
+```
+
+**选入口**：一次性任务 / 子 agent（要隔离）用 `Agent.run`；交互式连续对话（要记上文）用 `ChatSession`；跨 run 的长期记忆是另一条轴、走 `MemoryBackend`（与入口无关）。
+
 ---
 
 ## 6. 整体架构
 
-下图回答 ：「nanoagent 由哪几层组成，运行时调用关系是怎样的？」
+下图把核心的 **ReAct 循环**拆成主干步骤，并画出它运行时连向外面哪几层。
 
 ```mermaid
 flowchart TD
-    api["顶层 API<br/>Agent / ChatSession"]
-    cli["命令行 REPL"]
+    api["顶层 API / 命令行 REPL"] -->|"组装并运行"| core
 
-    subgraph corelayer["核心层 · 不变"]
-        loop["AgentLoop<br/>核心循环"]
-        data["核心数据结构<br/>Message / Context"]
-        hooks["Hook 机制<br/>生命周期注入点"]
+    subgraph core["核心层 · AgentLoop（ReAct 循环）"]
+        direction TB
+        reason["推理：chat(view)"] --> dec{"还要调工具吗?"}
+        dec -->|"否（终态）"| done["完成 → 返回 AgentResult"]
+        dec -->|"是"| act["执行工具"]
+        act --> fill["回填结果 → Context"]
+        fill --> reason
     end
 
-    subgraph caps["能力实现层"]
-        tools["Tool 系统<br/>装饰器 + 注册表"]
-        llm["LLM 客户端<br/>OpenAI 兼容"]
-        mem["Memory 后端<br/>内存消息列表"]
-    end
-
-    strategies["策略层 · 可插拔<br/>上下文 / 权限 / 停止"]
-    obs["Trace 可观测<br/>控制台 / OpenTelemetry"]
-
-    cli -->|"启动"| api
-    api -->|"组装并运行"| loop
-    loop -->|"读写"| data
-    loop -->|"生命周期点回调"| hooks
-    loop -->|"调度"| tools
-    loop -->|"推理请求"| llm
-    loop -->|"存取"| mem
-    hooks -.->|"被策略实现"| strategies
-    loop -->|"发出 span"| obs
+    core -->|"推理：调 LLM"| llm["LLM 客户端"]
+    core -->|"执行：调度工具"| tools["Tool 系统<br/>含 MCP / Skill 等来源"]
+    core -.->|"各生命周期点经 Hook 注入"| strat["策略层（= harness 主体）<br/>上下文 / 权限 / 停止 / 熔断"]
 
     classDef stable fill:#fff0aa
-    class loop,data,hooks stable
+    class reason,dec,act,fill,done stable
 ```
+
+**读图要点**：暖黄的「推理 →（还调工具吗）→ 执行 → 回填 → 再推理」就是 ReAct 主干，循环全程读写同一个 `Context`（模型不再调工具即终态）。**实线**=循环**直接调用**的能力（LLM / 工具，必需品）；**虚线**=各生命周期点**经 Hook 注入**的**策略层（即 harness 主体**：上下文 / 权限 / 停止 / 熔断，拿掉它退化为纯 ReAct）。Tool 系统还可接入 `MCP / Skill` 等**外部工具来源**（已并入 Tool 节点）。Memory、Trace、Subagent 等其余模块不在 ReAct 主干上（Memory 经工具访问、Trace 每步发 span），完整清单见 §1.4；8 个 hook 逐个触发的时序见 §7。
 
 **当前方案为何如此** ：把「能力实现层」与「策略层」分成两组而不是合并，是一个有意的区分。能力实现层（LLM / 工具 / memory）被核心循环**直接调用**，因为这些是循环跑起来的必需品 ；策略层被核心循环**间接经 Hook 调用**，因为这些是可选的工程增强。判据是 ：拿掉能力实现层循环就跑不起来，拿掉策略层循环仍能跑（退化为纯 ReAct）。
 
@@ -926,7 +952,9 @@ $ export OPENAI_API_KEY=sk-...
 $ nanoagent
 ```
 
-### 11.2 一次带工具调用的对话
+### 11.2 命令行对话 ：单次任务与多轮记忆
+
+**单次任务带工具调用**：
 
 ```text
 ▸ 看看当前目录里有哪些 .py 文件超过了 100 行
@@ -941,6 +969,21 @@ $ nanoagent
 
   用量 ：3 轮 · 1,847 tokens
 ```
+
+**多轮对话 —— 全程记得上文**（v0.1 招牌体验）：命令行本身就是一个 `ChatSession`，整段对话复用同一个 `Context`，后一句无需重复前文：
+
+```text
+▸ 这个项目是干嘛的？
+
+  [tool] read_file(path="README.md")
+  nanoagent 是一个核心循环约 30 行的 ReAct 单 agent 框架。
+
+▸ 它的核心循环在哪个文件？        ← 「它」指上一轮的 nanoagent，模型据上下文即懂
+
+  loop.py（约 118 行）。
+```
+
+当库用时同理 ：`s = Agent(...).session()` 后多次 `s.send(...)`，复用同一个 `Context`（见 §5.6 用法对照）；一次性、互不相关的任务才用 `Agent(...).run(...)`。
 
 ### 11.3 v0.1 的内置工具
 
@@ -1063,7 +1106,7 @@ anthropic = ["anthropic>=0.30"]
 
 §13.3 不做的是**第一种**（框架执行模型）；nanoagent 完整保留并鼓励**第二种**（Agent 能力）。在 ReAct 里，plan 是模型能自由改写的**数据**，不是必须重新编译的**结构**。
 
-**四个投入档位，全部落在现成扩展点上，都不动 `AgentLoop` 那 30 行：**
+**四个投入档位，全部落在现成扩展点上，都不动 `AgentLoop` 主体：**
 
 | 档位 | 怎么做 | 落在哪个扩展点 | 类比 |
 |---|---|---|---|
