@@ -3,12 +3,14 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "nanoagent"
+name = "pynanoagent"   # PyPI 发布名（nanoagent 被 PyPI 相似名检查拦下）；导入名 / 命令仍是 nanoagent
 version = "0.1.0.dev0"
 description = "易于理解、可融入最佳实践、且真正可用的 ReAct 单 agent Python 框架（核心循环 ~30 行）"
 readme = "README.md"
 requires-python = ">=3.9"   # 注：CLI 配置读取计划用 tomllib（3.11+）；3.9/3.10 届时用 tomli 兜底或上调下限（Day5 定，见 v0.1-design.md §9.2）
 license = { text = "MIT" }
+authors = [{ name = "eastonsuo" }]
+keywords = ["agent", "react", "llm", "tool-calling", "openai", "deepseek"]
 dependencies = [
     "openai>=1.30",
     "prompt-toolkit>=3",
@@ -17,8 +19,12 @@ dependencies = [
     "duckduckgo-search>=6",
 ]
 
+[project.urls]
+Homepage = "https://github.com/eastonsuo/nanoagent"
+Repository = "https://github.com/eastonsuo/nanoagent"
+
 [project.scripts]
-nanoagent = "nanoagent.cli.main:main"   # cli 尚未实现（Day5）；入口映射按 CLAUDE.md 硬约束先就位
+nanoagent = "nanoagent.cli.main:main"   # cli 已实现（input→prompt_toolkit REPL）
 
 [project.optional-dependencies]
 dev = ["pytest>=7", "pytest-cov>=4", "import-linter>=2"]

@@ -1,0 +1,27 @@
+name: Publish to PyPI
+
+# 发布时机：在 GitHub 上 "Releases → Draft a new release" 发布一个 release（建议打 tag v0.1.0.devN）即触发。
+# 用 PyPI Trusted Publishing（OIDC），无需 API token；需在 PyPI 配好 pending/trusted publisher：
+#   Project=nanoagent, Owner=eastonsuo, Repo=nanoagent, Workflow=publish.yml, Environment=pypi
+on:
+  release:
+    types: [published]
+  workflow_dispatch: {}        # 也允许手动触发（Actions 页点 Run workflow）
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi          # 与 PyPI 表单的 Environment name 一致；可在仓库 Settings→Environments 建
+    permissions:
+      id-token: write          # OIDC：Trusted Publishing 凭此换取上传凭证，免 token
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build sdist + wheel
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+      - name: Publish to PyPI (trusted publishing)
+        uses: pypa/gh-action-pypi-publish@release/v1

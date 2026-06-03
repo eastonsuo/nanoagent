@@ -21,3 +21,7 @@ venv/
 start.sh
 .env
 *.local.sh
+
+# 构建产物
+dist/
+build/

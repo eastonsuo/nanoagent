@@ -953,7 +953,7 @@ v0.1 的最小可用成品是一个命令行 agent ：装好后在终端输入 `
 #### 安装与配置
 
 ```text
-$ pip install nanoagent
+$ pip install pynanoagent          # 发布名带 py 前缀；导入名 / 命令仍是 nanoagent
 $ export OPENAI_API_KEY=sk-...
 $ nanoagent
 ```
