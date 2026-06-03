@@ -2,7 +2,7 @@
 
 > 一个核心循环只有约 30 行、却能通过分阶段引入 harness 工程实践演进为真实可用运行时的 **ReAct 单 agent 框架**。既把 agent 的内部机制讲清楚，也让人能基于它构建自己的 agent 应用。
 
-> ⚠️ **状态：v0.1 开发中（WIP）**。核心层（`core/`）已落地；命令行入口、LLM 客户端、工具系统等仍在实现中，**尚未发布到 PyPI、暂不能 `pip install`**。设计已定稿，见 [`docs/DESIGN.md`](docs/DESIGN.md)。
+> **状态：v0.1 基础版已实现**。核心循环 / 工具系统 / LLM 客户端（OpenAI 兼容，含 DeepSeek）/ in-memory memory / 默认策略 / 命令行入口均已落地，`python -m pytest` 57 passed（全程不联网）。**当前可从源码安装运行**（见[快速开始](#快速开始)）；PyPI 发布在即，届时可直接 `pip install nanoagent`。设计见 [`docs/DESIGN.md`](docs/DESIGN.md)。
 
 ## 这是什么
 
@@ -53,22 +53,36 @@ flowchart TD
 
 | 版本 | 范围 | 状态 |
 |---|---|---|
-| **v0.1 · Core** | 单 agent + 工具系统 + in-memory memory + 命令行 demo | 🚧 进行中（`core/` 已落地） |
+| **v0.1 · Core** | 单 agent + 工具系统 + in-memory memory + 命令行 demo | ✅ 基础版完成（可源码运行，57 单测通过） |
 | v0.2 · Skills + Trace + MCP | Skill 渐进式加载 + OpenTelemetry trace + 文件系统 memory + MCP 工具适配器 | 📋 计划 |
 | v0.3 · Harness | 上下文管理多策略 + 权限系统 + 熔断器 + subagent | 📋 计划 |
 | v0.4 · Eval | 三维度评估框架（独立 repo） | 📋 计划 |
 
-## 目标体验（开发中，尚不可运行）
+## 快速开始
 
-v0.1 完成后，装好即可在终端直接对话：
+当前从源码安装（PyPI 发布后可直接 `pip install nanoagent`）：
 
-```text
-$ pip install nanoagent
-$ export OPENAI_API_KEY=sk-...
-$ nanoagent
+```bash
+git clone https://github.com/eastonsuo/nanoagent && cd nanoagent
+pip install -e .
 ```
 
-也可以用 `@tool` 装饰器注册自己的工具、当库来用：
+**命令行对话**（需一个 OpenAI 兼容的 key）：
+
+```bash
+export OPENAI_API_KEY=sk-...          # OpenAI
+nanoagent
+```
+
+换 **DeepSeek** 等兼容端点：模型名带前缀即自动识别端点，只需给对应 key（无需手设 base_url）：
+
+```bash
+export DEEPSEEK_API_KEY=sk-...        # DeepSeek（没有则回落 OPENAI_API_KEY）
+export NANOAGENT_MODEL=deepseek-chat
+nanoagent
+```
+
+**当库用** —— `@tool` 注册工具，一次性任务用 `Agent.run`、多轮对话用 `Agent(...).session()`：
 
 ```python
 from nanoagent import Agent, tool
@@ -78,21 +92,27 @@ def word_count(path: str) -> int:
     """统计文本文件的单词数。"""
     return len(open(path).read().split())
 
-agent = Agent(model="gpt-4o-mini", tools=[word_count])
-print(agent.run("统计 README.md 有多少单词").output)
+agent = Agent("gpt-4o-mini", tools=[word_count])
+print(agent.run("统计 README.md 有多少单词").output)     # 一次性，跨 run 无记忆
+
+chat = agent.session()                                    # 多轮，记得上文
+chat.send("我叫小明")
+print(chat.send("我叫什么？").output)
 ```
 
-> 以上为**目标接口**，对应设计文档第 5 / 11 章；当前尚未实现 CLI 与 LLM 客户端，跑不通。
+## v0.1 已实现
 
-## 当前已落地（v0.1 · core 层）
+| 层 | 模块 | 内容 |
+|---|---|---|
+| 核心层 · 数年不变 | `core/` | 数据结构 + 能力/策略契约 + 8 点 Hook + `AgentLoop`（~30 行 ReAct 循环）|
+| 能力实现 | `tools/` `llm/` `memory/` | `@tool` + schema 自动生成；OpenAI 兼容客户端（+ 测试用 echo）；in-memory memory |
+| 策略层 · 可插拔 | `strategies/` | 默认 noop / allow-all / max-turns + 把策略包成 Hook |
+| 入口装配 | `api.py` `cli/` | `Agent` / `ChatSession` + 命令行 REPL |
 
-`nanoagent/core/`，纯标准库 `dataclass` / `Protocol`，**零第三方依赖**：
-
-- **数据结构**：`Message` / `ToolCall` / `ToolResult` / `LLMResponse` / `Context`（append-only 事件日志 + `view()` 投影）/ `AgentResult`。
-- **能力 / 策略契约**：`LLMClient` / `Tool` / `MemoryBackend`，以及 `ContextStrategy` / `PermissionStrategy` / `StopStrategy` 三个策略 Protocol。
-- **Hook 机制**：`Hook`（8 个生命周期点）+ `BaseHook` 空实现 + `ToolDecision`。
-- **其它**：`StopReason` 枚举、框架异常类型。
-- **依赖防线**：`core/` 不 import 任何外层目录——「稳定核心」这条原则的物理保证（设计 §8.1）。
+- **可读性**：核心层（非 `__init__`）约 390 行，< 500。
+- **测试**：`python -m pytest` → 57 passed，全程不联网、不需 API key（echo 客户端驱动全链路）。
+- **依赖防线**：`core/` 不 import 任何外层目录——「稳定核心」原则的物理保证（设计 §8.1）。
+- **OpenAI 兼容**：OpenAI / DeepSeek / Kimi / vLLM / Ollama，换模型名或端点即可。
 
 ## 文档
 

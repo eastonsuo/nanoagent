@@ -960,7 +960,23 @@ $ nanoagent
 
 #### 命令行对话 ：单次任务与多轮记忆
 
-**单次任务带工具调用**：
+**真实运行（接 DeepSeek，自带 5 个内置工具）**——`DEEPSEEK_API_KEY` + `NANOAGENT_MODEL=deepseek-chat` 后 `nanoagent` 即可：
+
+```text
+$ nanoagent
+nanoagent 0.1.0.dev0 · 模型 deepseek-chat — 输入问题开始对话（Ctrl-D / Ctrl-C 退出）
+
+> 你好
+你好！有什么需要帮忙的吗？我可以帮你搜索信息、读取或写入文件、执行命令等。
+  （1 轮 · 616 tokens）
+
+> 你现在支持哪些工具
+我目前支持以下 5 个工具：read_file（读文本文件内容）、write_file（写入文本文件）、
+list_files（按 glob 模式列目录）、run_shell（执行 shell 命令）、web_search（DuckDuckGo 检索）。
+  （1 轮 · 2392 tokens）
+```
+
+**单次任务带工具调用**（示意，含工具调用回显）：
 
 ```text
 $ nanoagent
