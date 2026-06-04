@@ -2,7 +2,9 @@
 
 [English](README.md) · **中文**
 
-> 一个核心循环只有约 30 行、却能通过分阶段引入 harness 工程实践演进为真实可用运行时的 **ReAct 单 agent 框架**。既把 agent 的内部机制讲清楚，也让人能基于它构建自己的 agent 应用。
+### 以 Harness 为核心的 ReAct **Agent** 框架
+
+> 一条原则——**Stable Core + Pluggable Harness（稳定核心 + 可插拔 Harness）**：~30 行核心循环数年不变，**harness**（上下文工程 · 权限 · 熔断 · 可观测性）以策略形式插拔接入。核心读得懂、能学，harness 让它真能用。
 
 > **状态：v0.1 基础版已实现**。核心循环 / 工具系统 / LLM 客户端（OpenAI 兼容，含 DeepSeek）/ in-memory memory / 默认策略 / 命令行入口均已落地，`python -m pytest` 61 passed（全程不联网）。**当前可从源码安装运行**（见[快速开始](#快速开始)）；PyPI 发布在即，届时 `pip install pynanoagent`（发布名加 `py` 前缀，导入仍 `import nanoagent`）。设计见 [`docs/DESIGN.md`](docs/DESIGN.md)。
 

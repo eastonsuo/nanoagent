@@ -960,20 +960,22 @@ $ nanoagent
 
 #### 命令行对话 ：单次任务与多轮记忆
 
-**真实运行（接 DeepSeek，自带 5 个内置工具）**——`DEEPSEEK_API_KEY` + `NANOAGENT_MODEL=deepseek-chat` 后 `nanoagent` 即可：
+**真实运行（接 DeepSeek）**——`DEEPSEEK_API_KEY` + `NANOAGENT_MODEL=deepseek-chat` 后 `nanoagent` 即可。注意「查询当前目录文件」那轮是 **2 轮**：模型先调 `list_files` 工具、拿到结果再作答（这就是工具被实际调用）：
 
 ```text
 $ nanoagent
 nanoagent 0.1.0.dev0 · 模型 deepseek-chat — 输入问题开始对话（Ctrl-D / Ctrl-C 退出）
 
 > 你好
-你好！有什么需要帮忙的吗？我可以帮你搜索信息、读取或写入文件、执行命令等。
-  （1 轮 · 616 tokens）
+你好！有什么我可以帮你的吗？如果需要查询信息、操作文件或执行命令，尽管告诉我。
+  （1 轮 · 611 tokens）
 
-> 你现在支持哪些工具
-我目前支持以下 5 个工具：read_file（读文本文件内容）、write_file（写入文本文件）、
-list_files（按 glob 模式列目录）、run_shell（执行 shell 命令）、web_search（DuckDuckGo 检索）。
-  （1 轮 · 2392 tokens）
+> 查询当前目录文件
+当前目录下有以下文件和文件夹：
+  文件夹：_internal/、docs/、nanoagent/、tests/
+  文件：CLAUDE.md、LICENSE、README.md、README.zh-CN.md、pyproject.toml、start.sh
+看起来这是一个 Python 项目（nanoagent），有文档、测试和启动脚本。需要我查看或进一步操作某个文件吗？
+  （2 轮 · 3411 tokens）
 ```
 
 **单次任务带工具调用**（示意，含工具调用回显）：

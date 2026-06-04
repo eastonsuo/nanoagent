@@ -2,7 +2,9 @@
 
 **English** · [中文](README.zh-CN.md)
 
-> A **single-agent ReAct framework** whose core loop is only ~30 lines, yet evolves into a genuinely usable runtime by introducing harness engineering practices in stages. It makes an agent's internals readable *and* lets you build your own agent app on top.
+### A harness-first ReAct **Agent** framework
+
+> One principle — **Stable Core + Pluggable Harness**: a ~30-line core loop stays fixed for years, while the **harness** (context engineering · permissions · circuit-breaking · observability) plugs in as strategies. The agent's internals stay readable enough to learn from, and the harness makes it real enough to use.
 
 > **Status: v0.1 baseline implemented.** Core loop / tool system / LLM client (OpenAI-compatible, incl. DeepSeek) / in-memory memory / default strategies / CLI are all in place; `python -m pytest` → 61 passed (fully offline). **Installable from source today** (see [Quick start](#quick-start)); PyPI release imminent — then `pip install pynanoagent` (the dist name carries a `py` prefix; you still `import nanoagent`). Design doc (in Chinese): [`docs/DESIGN.md`](docs/DESIGN.md).
 
