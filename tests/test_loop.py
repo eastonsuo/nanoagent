@@ -80,3 +80,14 @@ def test_unknown_tool_feeds_error():
     tool_msgs = [m for m in r.context.messages if m.role == "tool"]
     assert tool_msgs[0].tool_result.is_error
     assert "unknown tool" in tool_msgs[0].tool_result.content
+
+
+def test_malformed_arguments_feed_error_not_executed():
+    # 参数非法（parse_error 已由 llm 层标记）：loop 喂回错误、不执行工具，模型据此自纠
+    bad = ToolCall("c1", "add", {}, parse_error="工具参数不是合法 JSON 对象")
+    script = [_resp(calls=[bad]), _resp(content="已用合法 JSON 重发")]
+    r = AgentLoop(EchoClient(script), tools=[add]).run(_ctx())
+    tool_msgs = [m for m in r.context.messages if m.role == "tool"]
+    assert tool_msgs[0].tool_result.is_error
+    assert "JSON" in tool_msgs[0].tool_result.content
+    assert r.output == "已用合法 JSON 重发"               # 软处理：模型换合法参数后继续到 DONE

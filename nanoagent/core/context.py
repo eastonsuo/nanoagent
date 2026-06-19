@@ -30,9 +30,10 @@ class Context:
             self.usage[k] = self.usage.get(k, 0) + v
 
     def view(self) -> list[Message]:
-        """真正发给 LLM 的消息。v0.1：identity=全量历史。
-        v0.3：before_model 里的上下文策略调用 set_view() 写入裁剪结果。"""
-        return self._rendered if self._rendered is not None else self.messages
+        """真正发给 LLM 的消息（返回浅拷贝：调用方拿到快照，无法反向改 messages/投影）。
+        v0.1：内容=全量历史。v0.3：before_model 里的上下文策略调用 set_view() 写入裁剪结果。"""
+        src = self._rendered if self._rendered is not None else self.messages
+        return list(src)
 
     def set_view(self, messages: list[Message]) -> None:
         """由 before_model 的上下文策略调用，提交本轮发给模型的投影（不改 messages）。"""

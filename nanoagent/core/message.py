@@ -11,6 +11,7 @@ class ToolCall:
     id: str
     name: str
     arguments: dict[str, Any]
+    parse_error: str = ""   # 非空＝模型发来的 arguments 不是合法 JSON 对象；loop 据此喂回错误让其自纠、不执行工具
 
 
 @dataclass

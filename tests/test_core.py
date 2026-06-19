@@ -35,6 +35,15 @@ def test_set_view_then_add_invalidates_projection():
     assert ctx.view() == ctx.messages               # add 后旧投影作废、回落全量
 
 
+def test_view_returns_copy_not_internal_list():
+    # view() 返回拷贝：调用方改返回的列表，不污染内部 messages 日志（append-only 物理防线）
+    ctx = Context()
+    ctx.add(Message(role="user", content="x"))
+    snapshot = ctx.view()
+    snapshot.append(Message(role="user", content="injected"))
+    assert len(ctx.messages) == 1                   # 内部日志不受影响
+
+
 def test_add_usage_accumulates_across_turns():
     ctx = Context()
     ctx.add_usage({"total_tokens": 10})

@@ -100,6 +100,8 @@ class AgentLoop:
         return ToolDecision(allowed=True)                    # 无 hook / 全放行 → 默认放行
 
     def _invoke(self, call: ToolCall) -> ToolResult:
+        if call.parse_error:                                 # 参数不是合法 JSON → 喂回让模型自纠（与未知工具名同等优雅降级）
+            return ToolResult(call.id, content=call.parse_error, is_error=True)
         if call.name not in self.tools:                      # 模型可能幻觉工具名 → 喂回错误而非抛
             return ToolResult(call.id, content=f"unknown tool: {call.name}", is_error=True)
         try:

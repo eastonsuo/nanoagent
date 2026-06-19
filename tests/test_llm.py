@@ -7,7 +7,9 @@ EchoClient 的脚本能力是后续 loop 多轮路径单测的基石。
 import json
 from types import SimpleNamespace as NS
 
-from nanoagent.core import LLMResponse, Message, ToolCall, ToolResult
+import pytest
+
+from nanoagent.core import LLMResponse, Message, NanoAgentError, ToolCall, ToolResult
 from nanoagent.llm import EchoClient
 from nanoagent.llm.openai_compat import _parse_response, _to_openai
 
@@ -76,3 +78,28 @@ def test_parse_response_tool_calls():
     assert r.message.tool_calls[0].id == "call_1"
     assert r.message.tool_calls[0].name == "read_file"
     assert r.message.tool_calls[0].arguments == {"path": "a"}
+    assert r.message.tool_calls[0].parse_error == ""     # 合法参数：无错误标记
+
+
+def test_parse_response_malformed_arguments_no_crash():
+    # 模型返回截断的非法 JSON（DeepSeek/Kimi/本地模型常见）：_parse_response 不应抛、不崩 loop
+    tc = NS(id="c1", function=NS(name="read_file", arguments='{"path": '))
+    resp = NS(choices=[NS(message=NS(content=None, tool_calls=[tc]))], usage=None)
+    call = _parse_response(resp).message.tool_calls[0]   # 不抛异常
+    assert call.arguments == {}                          # 置空，不会拿脏参数去调工具
+    assert call.parse_error and "JSON" in call.parse_error
+
+
+def test_parse_response_non_object_arguments_marked():
+    # 合法 JSON 但不是对象（如 "5"），不能当 kwargs → 同样标记 parse_error
+    tc = NS(id="c1", function=NS(name="f", arguments="5"))
+    resp = NS(choices=[NS(message=NS(content=None, tool_calls=[tc]))], usage=None)
+    call = _parse_response(resp).message.tool_calls[0]
+    assert call.arguments == {} and call.parse_error
+
+
+def test_parse_response_empty_choices_raises():
+    # 空 choices（内容过滤 / 异常响应）：清晰报错，而非裸 IndexError
+    resp = NS(choices=[], usage=None)
+    with pytest.raises(NanoAgentError):
+        _parse_response(resp)

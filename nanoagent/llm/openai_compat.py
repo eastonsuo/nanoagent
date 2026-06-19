@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 
-from nanoagent.core import LLMResponse, Message, ToolCall
+from nanoagent.core import LLMResponse, Message, NanoAgentError, ToolCall
 
 
 def _safe(text):
@@ -55,16 +55,33 @@ def _to_openai(m: Message) -> dict:
     return {"role": m.role, "content": _safe(m.content)}
 
 
+def _parse_tool_call(c) -> ToolCall:
+    """单个 OpenAI tool_call → core ToolCall。
+
+    arguments 非法（截断 / 缺引号 / 不是 JSON 对象）时不抛、不崩 loop：标记 parse_error、置空 arguments，
+    交由 loop._invoke 喂回错误让模型自纠（对齐「未知工具名」的优雅降级，见 loop.py 的 _invoke）。
+    DeepSeek / Kimi / 本地模型偶发非法工具参数 JSON，这条兜底很关键。
+    """
+    raw = c.function.arguments or "{}"
+    try:
+        args = json.loads(raw)
+        if not isinstance(args, dict):                       # 合法 JSON 但非对象（如 "5" / "[1]"）不能当 kwargs
+            raise ValueError("不是 JSON 对象")
+    except (json.JSONDecodeError, ValueError) as e:
+        return ToolCall(c.id, c.function.name, {},
+                        parse_error=f"工具参数不是合法 JSON 对象（{e}）；请用合法 JSON 重发。")
+    return ToolCall(c.id, c.function.name, args)
+
+
 def _parse_response(resp) -> LLMResponse:
     """OpenAI 响应对象 → LLMResponse。tool_calls 只取 assistant 消息自带的那份。"""
+    if not resp.choices:                                 # 空 choices（内容过滤 / 异常响应）：给清晰错误，别 IndexError 崩
+        raise NanoAgentError("LLM 返回空 choices（无可用回复）——请检查模型 / 输入 / 内容审查设置。")
     choice = resp.choices[0].message
     msg = Message(
         role="assistant",
         content=choice.content or "",
-        tool_calls=[
-            ToolCall(c.id, c.function.name, json.loads(c.function.arguments or "{}"))
-            for c in (choice.tool_calls or [])
-        ],
+        tool_calls=[_parse_tool_call(c) for c in (choice.tool_calls or [])],
     )
     u = getattr(resp, "usage", None)
     usage = (
